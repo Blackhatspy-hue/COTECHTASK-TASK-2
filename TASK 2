@@ -1,0 +1,108 @@
+import requests
+from colorama import Fore, Style
+from .utils import *
+
+class Scanner:
+    def __init__(self):
+        self.url = None
+        self.vulnerabilities = []
+
+    def set_url(self, url):
+        self.url = url
+
+    def scan(self):
+        if not self.url:
+            raise ValueError("URL not set")
+
+        # Check for common vulnerabilities
+        self.check_common_vulnerabilities()
+
+        # Check for SQL injection
+        self.check_sql_injection()
+
+        # Check for cross-site scripting (XSS)
+        self.check_xss()
+
+        return self.vulnerabilities
+
+    def check_common_vulnerabilities(self):
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+
+        try:
+            response = requests.get(self.url, headers=headers, timeout=10)
+            response.raise_for_status()
+            
+            if "robots.txt" in response.text.lower():
+                self.vulnerabilities.append({
+                    "type": "robots.txt",
+                    "message": f"The URL {Fore.YELLOW}{self.url}{Style.RESET_ALL} contains robots.txt file."
+                })
+        except requests.RequestException as e:
+            self.vulnerabilities.append({
+                "type": "connection_error",
+                "message": f"An error occurred while connecting to {Fore.YELLOW}{self.url}{Style.RESET_ALL}: {e}"
+            })
+
+    def check_sql_injection(self):
+        sql_injection_strings = [
+            "' OR '1'='1",
+            "--",
+            ";",
+            "/*",
+            "//",
+            "<script>alert('XSS')</script>",
+            "SELECT * FROM users WHERE password='"
+        ]
+
+        for string in sql_injection_strings:
+            payload = f"?{string}"
+            full_url = self.url + payload
+            
+            try:
+                response = requests.get(full_url, timeout=5)
+                response.raise_for_status()
+                
+                if "SQL Injection" in str(response.content):
+                    self.vulnerabilities.append({
+                        "type": "sql_injection",
+                        "message": f"{Fore.YELLOW}Potential SQL injection detected:{Style.RESET_ALL}\nURL: {Fore.CYAN}{full_url}{Style.RESET_ALL}\nResponse: {response.text[:100]}..."
+                    })
+            except requests.RequestException:
+                pass
+
+    def check_xss(self):
+        xss_strings = ["<script>alert('XSS')</script>", "</script>"]
+
+        for string in xss_strings:
+            payload = f"?xss={string}"
+            full_url = self.url + payload
+            
+            try:
+                response = requests.get(full_url, timeout=5)
+                response.raise_for_status()
+                
+                if "XSS" in str(response.content):
+                    self.vulnerabilities.append({
+                        "type": "xss",
+                        "message": f"{Fore.YELLOW}Potential XSS detected:{Style.RESET_ALL}\nURL: {Fore.CYAN}{full_url}{Style.RESET_ALL}\nResponse: {response.text[:100]}..."
+                    })
+            except requests.RequestException:
+                pass
+
+# Initialize the scanner
+scanner = Scanner()
+
+# Example usage
+if __name__ == "__main__":
+    url = input("Enter the URL to scan: ")
+    scanner.set_url(url)
+    vulnerabilities = scanner.scan()
+    
+    if vulnerabilities:
+        print(f"\nVulnerabilities found:")
+        for vuln in vulnerabilities:
+            print(vuln["message"])
+    else:
+        print("\nNo vulnerabilities found.")
